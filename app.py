@@ -4,7 +4,6 @@ import sys
 import io
 import matplotlib.pyplot as plt
 import importlib
-import time
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -18,12 +17,12 @@ st.set_page_config(
 if "current_page" not in st.session_state:
     st.session_state.current_page = "Home"
 
-# Initialize Session State for caching App 2 (ML) & App 4 (BPMN) results
+# Store BPMN as an image buffer (BytesIO), not a Figure object
+if "bpmn_image" not in st.session_state:
+    st.session_state.bpmn_image = None
+
 if "delay_model_results" not in st.session_state:
     st.session_state.delay_model_results = {"run": False, "logs": "", "figures": []}
-
-if "bpmn_figure" not in st.session_state:
-    st.session_state.bpmn_figure = None
 
 
 def navigate_to(page_name):
@@ -32,277 +31,241 @@ def navigate_to(page_name):
 
 
 # =========================================================
-# 🏠 DASHBOARD HOME PAGE
+# 🏠 DASHBOARD
 # =========================================================
 def show_home():
     st.title("✈️ Swissport AI Operations Hub")
     st.markdown("### Select a module to begin")
-    st.markdown("---")
-
+    st.divider()
     col1, col2 = st.columns(2)
     col3, col4 = st.columns(2)
 
     with col1:
         with st.container(border=True):
             st.subheader("🤖 Flight Assistant")
-            st.markdown("Generative AI Chatbot powered by Neo4j Knowledge Graph.")
-            if st.button("Launch Assistant 🚀", use_container_width=True):
-                navigate_to("Flight Assistant")
-
+            if st.button("Launch Assistant 🚀", use_container_width=True): navigate_to("Flight Assistant")
     with col2:
         with st.container(border=True):
             st.subheader("🛡️ Delay Risk Analysis")
-            status = "✅ Ready" if st.session_state.delay_model_results["run"] else "⚠️ Not Run"
-            st.markdown(f"Machine Learning model for delay prediction. Status: **{status}**")
-            if st.button("Launch Risk Model 📊", use_container_width=True):
-                navigate_to("Delay Prediction")
-
+            if st.button("Launch Risk Model 📊", use_container_width=True): navigate_to("Delay Prediction")
     with col3:
         with st.container(border=True):
             st.subheader("👁️ Turnaround Vision")
-            st.markdown("Real-time Computer Vision analysis for turnaround phases.")
-            if st.button("Launch Vision AI 🎥", use_container_width=True):
-                navigate_to("Turnaround Vision")
-
+            if st.button("Launch Vision AI 🎥", use_container_width=True): navigate_to("Turnaround Vision")
     with col4:
         with st.container(border=True):
-            st.subheader("🗺️ Process SOP Visualizer")
-            status = "✅ Generated" if st.session_state.bpmn_figure else "⚠️ Not Generated"
-            st.markdown(f"Interactive BPMN visualization. Status: **{status}**")
-            if st.button("View Process Map 📐", use_container_width=True):
-                navigate_to("BPMN Visualizer")
+            st.subheader("🗺️ Process Visualizer")
+            if st.button("View Process Map 📐", use_container_width=True): navigate_to("BPMN Visualizer")
 
 
 # =========================================================
-# 🤖 MINI APP 1: CHATBOT
+# 🤖 APP 1: CHATBOT
 # =========================================================
 def show_chatbot():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
     st.title("🤖 Graph-Augmented Flight Assistant")
-    st.divider()
 
+    # Debug import
     try:
         import Chatbot_neo4j as bot_module
-    except ImportError:
-        st.error("Could not import 'Chatbot_neo4j.py'.")
-        bot_module = None
+    except Exception as e:
+        st.error(f"❌ Error importing Chatbot: {e}")
+        st.code(traceback.format_exc())
+        return
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+    if "messages" not in st.session_state: st.session_state.messages = []
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    for msg in st.session_state.messages:
+        st.chat_message(msg["role"]).markdown(msg["content"])
 
     if prompt := st.chat_input("Ask about a flight..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        st.chat_message("user").markdown(prompt)
 
         with st.chat_message("assistant"):
-            message_placeholder = st.empty()
             if bot_module and hasattr(bot_module, 'agent_executor'):
                 with st.spinner("Thinking..."):
                     try:
                         response = bot_module.agent_executor.invoke({"input": prompt})
-                        answer = response['output']
-                        message_placeholder.markdown(answer)
-                        st.session_state.messages.append({"role": "assistant", "content": answer})
+                        st.markdown(response['output'])
+                        st.session_state.messages.append({"role": "assistant", "content": response['output']})
                     except Exception as e:
                         st.error(f"Error: {e}")
-            else:
-                st.error("Agent not ready.")
 
 
 # =========================================================
-# 🛡️ MINI APP 2: DELAY ML (Optimized)
+# 🛡️ APP 2: DELAY ML
 # =========================================================
 def show_delay_model():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
     st.title("🛡️ Delay Risk Analysis")
-    st.divider()
 
-    # --- RENDER CACHED RESULTS IF AVAILABLE ---
+    # DEBUG: Check if file exists and dependencies are met
+    try:
+        import delay_ml
+    except Exception as e:
+        st.error(f"❌ critical Error: Could not load 'delay_ml.py'.")
+        st.warning("This usually means a library is missing (like pandas/sklearn) or the file isn't found.")
+        st.code(f"Detailed Error: {e}\n\n{traceback.format_exc()}")
+        return
+
+    # Check Cache
     if st.session_state.delay_model_results["run"]:
-        st.success("Analysis Loaded from Cache")
+        st.success("Loaded from Cache")
         st.code(st.session_state.delay_model_results["logs"])
         for fig in st.session_state.delay_model_results["figures"]:
             st.pyplot(fig)
-
-        if st.button("🔄 Re-run Model"):
+        if st.button("🔄 Re-run"):
             st.session_state.delay_model_results = {"run": False, "logs": "", "figures": []}
             st.rerun()
         return
 
-    # --- RUN NEW ANALYSIS ---
     if st.button("🚀 Run Model Training"):
-        log_output = st.empty()
         captured_output = io.StringIO()
         figures_captured = []
 
         class StreamlitLogger:
-            def write(self, message):
-                captured_output.write(message)
-                log_output.code(captured_output.getvalue(), language="text")
+            def write(self, msg): captured_output.write(msg)
 
             def flush(self): pass
 
-        original_stdout = sys.stdout
-        original_show = plt.show
+        old_stdout = sys.stdout
+        sys.stdout = StreamlitLogger()
+
+        # Patch Plotting
+        old_show = plt.show
+
+        def new_show():
+            fig = plt.gcf()
+            st.pyplot(fig)
+            figures_captured.append(fig)
+            plt.figure()
+
+        plt.show = new_show
 
         try:
-            import delay_ml
-            sys.stdout = StreamlitLogger()
-
-            # Patch plt.show to save the figure to session state instead of just clearing
-            def streamlit_show():
-                fig = plt.gcf()
-                st.pyplot(fig)
-                figures_captured.append(fig)  # Cache the figure object
-                # We don't clear (clf) immediately so we can copy it,
-                # but pyplot handles new figures automatically usually.
-                # To be safe in loop:
-                plt.figure()
-
-            plt.show = streamlit_show
-
-            with st.spinner("Processing Data..."):
+            with st.spinner("Training..."):
+                importlib.reload(delay_ml)
                 delay_ml.main()
 
-            # Save to Session State
-            st.session_state.delay_model_results["run"] = True
-            st.session_state.delay_model_results["logs"] = captured_output.getvalue()
-            st.session_state.delay_model_results["figures"] = figures_captured
-
-            st.success("Done! Results cached.")
-
-        except ImportError:
-            st.error("Missing 'delay_ml.py'.")
+            st.session_state.delay_model_results = {
+                "run": True,
+                "logs": captured_output.getvalue(),
+                "figures": figures_captured
+            }
+            st.success("Done!")
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Runtime Error: {e}")
             st.code(traceback.format_exc())
         finally:
-            sys.stdout = original_stdout
-            plt.show = original_show
+            sys.stdout = old_stdout
+            plt.show = old_show
 
 
 # =========================================================
-# 👁️ MINI APP 3: TURNAROUND VISION (Looping)
+# 👁️ APP 3: VISION (Looping)
 # =========================================================
 def show_vision_app():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
-    st.title("👁️ Computer Vision Turnaround Analysis")
-    st.divider()
+    st.title("Computer Vision Turnaround Analysis")
 
+    # DEBUG: Show EXACT error if libraries fail
     try:
         import cv2
         from ultralytics import YOLO
-    except ImportError:
-        st.error("Missing libraries: `pip install opencv-python ultralytics`")
+    except ImportError as e:
+        st.error("❌ Library Import Error")
+        st.warning("This means opencv-python-headless or ultralytics is not installed correctly.")
+        st.code(f"Error details: {e}")
+        return
+    except Exception as e:
+        st.error(f"❌ Unexpected Error: {e}")
         return
 
     col_vid, col_stat = st.columns([0.7, 0.3])
-
-    # Control logic
-    if "vision_active" not in st.session_state:
-        st.session_state.vision_active = False
+    if "vision_active" not in st.session_state: st.session_state.vision_active = False
 
     with col_vid:
-        st.markdown("#### Video Feed")
-        col_btn1, col_btn2 = st.columns(2)
-        if col_btn1.button("▶️ Start Analysis"):
-            st.session_state.vision_active = True
-        if col_btn2.button("⏹️ Stop"):
-            st.session_state.vision_active = False
-
+        c1, c2 = st.columns(2)
+        if c1.button("▶️ Start"): st.session_state.vision_active = True
+        if c2.button("⏹️ Stop"): st.session_state.vision_active = False
         st_frame = st.empty()
 
-    with col_stat:
-        st.markdown("#### Live Phase Detection")
-        status_placeholder = st.empty()
-
     if st.session_state.vision_active:
-        video_path = './Object_detection/turnaround clip.mp4'
-        model_path = './Object_detection/best.pt'
-
         try:
-            model = YOLO(model_path)
-            cap = cv2.VideoCapture(video_path)
+            # TRY/CATCH for model loading specifically
+            model = YOLO('best.pt')
+            cap = cv2.VideoCapture('turnaround clip.mp4')
 
             phases = {"DEBOARDING": False, "CLEANING": False, "BOARDING": False, "LUGGAGE": False}
-            cleaning_count = 0
+            count = 0
 
             while st.session_state.vision_active:
                 success, frame = cap.read()
-
-                # LOOPING LOGIC: If video ends, reset to frame 0
                 if not success:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     continue
 
                 results = model(frame, verbose=False)
-                detected = [model.names[int(box.cls[0])] for box in results[0].boxes]
+                detected = [model.names[int(b.cls[0])] for b in results[0].boxes]
 
-                # Logic
                 if "cleaning_crew_vehicle" in detected:
-                    cleaning_count += 1
+                    count += 1
                     phases["CLEANING"] = True
-                if "luggage_vehicle" in detected:
-                    phases["LUGGAGE"] = True
+                if "luggage_vehicle" in detected: phases["LUGGAGE"] = True
                 if "bridge_connected" in detected:
-                    if cleaning_count < 10:
+                    if count < 10:
                         phases["DEBOARDING"] = True
                     else:
                         phases["BOARDING"] = True
 
-                # Display
-                annotated = results[0].plot()
-                st_frame.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), use_container_width=True)
+                frame_rgb = cv2.cvtColor(results[0].plot(), cv2.COLOR_BGR2RGB)
+                st_frame.image(frame_rgb, use_container_width=True)
 
-                # Status
-                status_txt = ""
-                for p, active in phases.items():
-                    color = "green" if active else "grey"
-                    icon = "✅" if active else "⬜"
-                    status_txt += f":{color}[{icon} **{p}**]\n\n"
-                status_placeholder.markdown(status_txt)
-
+                # Update status
+                with col_stat:
+                    status_text = ""
+                    for p, active in phases.items():
+                        icon = "✅" if active else "⬜"
+                        status_text += f"{icon} **{p}**\n\n"
+                    st.markdown(status_text)
             cap.release()
-
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Runtime Error: {e}")
+            st.code(traceback.format_exc())
+            st.session_state.vision_active = False
 
 
 # =========================================================
-# 🗺️ MINI APP 4: BPMN VISUALIZER (Optimized)
+# 🗺️ APP 4: BPMN (Image Caching Fix)
 # =========================================================
 def show_bpmn_app():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
     st.title("🗺️ SOP Process Visualization")
-    st.divider()
 
-    # --- RENDER CACHED FIGURE IF AVAILABLE ---
-    if st.session_state.bpmn_figure:
-        st.success("Loaded Process Map from Cache")
-        st.pyplot(st.session_state.bpmn_figure)
-
-        if st.button("🔄 Regenerate Diagram"):
-            st.session_state.bpmn_figure = None
+    # 1. Check if we have a cached image
+    if st.session_state.bpmn_image is not None:
+        st.success("Loaded from Cache")
+        st.image(st.session_state.bpmn_image)
+        if st.button("🔄 Regenerate"):
+            st.session_state.bpmn_image = None
             st.rerun()
         return
 
-    # --- GENERATE NEW DIAGRAM ---
+    # 2. Generate if not cached
     if st.button("📐 Generate Diagram"):
         original_show = plt.show
         try:
-            def streamlit_show():
-                fig = plt.gcf()
-                st.pyplot(fig)
-                # Store in session state
-                st.session_state.bpmn_figure = fig
+            # Patch plt.show to save as IMAGE buffer instead of Figure object
+            def save_as_image():
+                buf = io.BytesIO()
+                plt.savefig(buf, format="png", bbox_inches='tight')
+                buf.seek(0)
+                st.session_state.bpmn_image = buf  # Save the image bytes
+                st.image(buf)
                 plt.clf()
 
-            plt.show = streamlit_show
+            plt.show = save_as_image
 
             if 'bpmn_visualizer' in sys.modules:
                 import bpmn_visualizer
@@ -310,26 +273,19 @@ def show_bpmn_app():
             else:
                 import bpmn_visualizer
 
-            st.success("Diagram Generated & Cached!")
-
-        except ImportError:
-            st.error("Missing 'bpmn_visualizer.py'. (Check spelling/underscores)")
         except Exception as e:
             st.error(f"Error: {e}")
+            st.code(traceback.format_exc())
         finally:
             plt.show = original_show
 
 
-# =========================================================
-# 🧭 MAIN ROUTERs
-# =========================================================
-if st.session_state.current_page == "Home":
-    show_home()
-elif st.session_state.current_page == "Flight Assistant":
-    show_chatbot()
-elif st.session_state.current_page == "Delay Prediction":
-    show_delay_model()
-elif st.session_state.current_page == "Turnaround Vision":
-    show_vision_app()
-elif st.session_state.current_page == "BPMN Visualizer":
-    show_bpmn_app()
+# --- ROUTER ---
+pages = {
+    "Home": show_home,
+    "Flight Assistant": show_chatbot,
+    "Delay Prediction": show_delay_model,
+    "Turnaround Vision": show_vision_app,
+    "BPMN Visualizer": show_bpmn_app
+}
+pages[st.session_state.current_page]()
