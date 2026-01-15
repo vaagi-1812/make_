@@ -194,8 +194,8 @@ def show_vision_app():
     if st.session_state.vision_active:
         try:
             # TRY/CATCH for model loading specifically
-            model = YOLO('best.pt')
-            cap = cv2.VideoCapture('turnaround clip.mp4')
+            model = YOLO('./Object_detection/best.pt')
+            cap = cv2.VideoCapture('./Object_detection/turnaround clip.mp4')
 
             phases = {"DEBOARDING": False, "CLEANING": False, "BOARDING": False, "LUGGAGE": False}
             count = 0
