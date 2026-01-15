@@ -4,6 +4,7 @@ ultralytics
 matplotlib
 pandas
 scikit-learn
+seaborn
 neo4j
 langchain
 langchain-community
