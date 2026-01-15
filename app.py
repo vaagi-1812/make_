@@ -65,7 +65,7 @@ def show_home():
             st.subheader("🤖 Flight Assistant")
             st.markdown("""
             **GraphRAG AI Agent** Combines Large Language Models (LLM) with a Neo4j Knowledge Graph.  
-            *Capabilities:* Smart search for flight details, route connections, and real-time scheduling.
+            *Capabilities:* Smart search for flight details and route connections.
             """)
             if st.button("Launch Assistant 🚀", use_container_width=True):
                 navigate_to("Flight Assistant")
