@@ -9,4 +9,5 @@ neo4j
 langchain
 langchain-community
 langchain-openai
+langchain-groq
 python-dotenv

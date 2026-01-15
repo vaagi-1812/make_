@@ -2,6 +2,7 @@ import streamlit as st
 import traceback
 import sys
 import io
+import gc
 import matplotlib.pyplot as plt
 import importlib
 
@@ -182,7 +183,7 @@ def show_delay_model():
 
 
 # =========================================================
-# 👁️ APP 3: VISION (Optimization Fix)
+# 👁️ APP 3: VISION (Ultra-Optimized for Cloud)
 # =========================================================
 def show_vision_app():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
@@ -204,7 +205,6 @@ def show_vision_app():
         if c2.button("⏹️ Stop"): st.session_state.vision_active = False
         st_frame = st.empty()
 
-    # Place the status placeholder OUTSIDE the loop so it doesn't duplicate
     with col_stat:
         st.subheader("Live Phase Detection")
         status_placeholder = st.empty()
@@ -217,7 +217,6 @@ def show_vision_app():
 
             if not cap.isOpened():
                 st.error(f"❌ Could not find video at: {video_path}")
-                st.info("Make sure you uploaded 'Object_detection/turnaround clip.mp4' to GitHub.")
                 st.session_state.vision_active = False
                 return
 
@@ -231,14 +230,23 @@ def show_vision_app():
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Loop video
                     continue
 
-                # PERFORMANCE FIX: Only process every 3rd frame
+                # OPTIMIZATION 1: Skip more frames (Process 1 out of 5)
                 frame_counter += 1
-                if frame_counter % 3 != 0:
+                if frame_counter % 5 != 0:
                     continue
 
+                # OPTIMIZATION 2: Resize frame (Huge speedup)
+                # Resize to 640px width, maintaining aspect ratio
+                height, width = frame.shape[:2]
+                new_width = 640
+                new_height = int(height * (new_width / width))
+                frame = cv2.resize(frame, (new_width, new_height))
+
+                # Run Inference
                 results = model(frame, verbose=False)
                 detected = [model.names[int(b.cls[0])] for b in results[0].boxes]
 
+                # Logic
                 if "cleaning_crew_vehicle" in detected:
                     count += 1
                     phases["CLEANING"] = True
@@ -249,23 +257,25 @@ def show_vision_app():
                     else:
                         phases["BOARDING"] = True
 
-                # Display Video
+                # Display
                 frame_rgb = cv2.cvtColor(results[0].plot(), cv2.COLOR_BGR2RGB)
                 st_frame.image(frame_rgb, use_container_width=True)
 
-                # Update status (REPLACE text, don't append)
+                # Status Update
                 status_text = ""
                 for p, active in phases.items():
                     icon = "✅" if active else "⬜"
                     color = "green" if active else "grey"
                     status_text += f":{color}[{icon} **{p}**]\n\n"
-
                 status_placeholder.markdown(status_text)
+
+                # OPTIMIZATION 3: Force Garbage Collection every 20 processed frames
+                if frame_counter % 100 == 0:
+                    gc.collect()
 
             cap.release()
         except Exception as e:
             st.error(f"Runtime Error: {e}")
-            st.code(traceback.format_exc())
             st.session_state.vision_active = False
 
 
