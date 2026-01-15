@@ -2,9 +2,9 @@ import streamlit as st
 import traceback
 import sys
 import io
-import gc
 import matplotlib.pyplot as plt
 import importlib
+import gc  # Garbage collection for memory management
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -18,7 +18,6 @@ st.set_page_config(
 if "current_page" not in st.session_state:
     st.session_state.current_page = "Home"
 
-# Store BPMN as an image buffer (BytesIO), not a Figure object
 if "bpmn_image" not in st.session_state:
     st.session_state.bpmn_image = None
 
@@ -31,10 +30,10 @@ def navigate_to(page_name):
     st.rerun()
 
 
-# --- GLOBAL CACHING (SPEED BOOST) ---
+# --- GLOBAL CACHING ---
 @st.cache_resource
 def get_chatbot_agent():
-    # REMOVED TRY/EXCEPT so we can see the real error in the UI if it fails
+    # We import inside here to catch errors nicely
     import Chatbot_neo4j as bot_module
     return bot_module
 
@@ -82,18 +81,20 @@ def show_home():
 
 
 # =========================================================
-# 🤖 APP 1: CHATBOT
+# 🤖 APP 1: CHATBOT (Debug Mode)
 # =========================================================
 def show_chatbot():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
     st.title("🤖 GroundTruth Assistant")
 
+    # Try to load the module and show EXACT error if it fails
     try:
         bot_module = get_chatbot_agent()
     except Exception as e:
-        st.error("❌ Critical Error Importing Chatbot")
-        st.error(f"Error details: {e}")
-        st.warning("Check your requirements.txt and Streamlit Secrets.")
+        st.error("❌ Critical Error Importing Chatbot Module")
+        st.code(f"Error Details: {e}")
+        st.warning("Ensure requirements.txt has 'neo4j', 'langchain', etc. and Secrets are set.")
+        st.code(traceback.format_exc())
         return
 
     if "messages" not in st.session_state: st.session_state.messages = []
@@ -113,7 +114,9 @@ def show_chatbot():
                         st.markdown(response['output'])
                         st.session_state.messages.append({"role": "assistant", "content": response['output']})
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(f"Agent Error: {e}")
+            else:
+                st.error("Agent Executor not found in module.")
 
 
 # =========================================================
@@ -125,9 +128,12 @@ def show_delay_model():
 
     try:
         import delay_ml
+    except ImportError as e:
+        st.error(f"❌ Import Error: {e}")
+        st.info("Did you add 'seaborn' to requirements.txt?")
+        return
     except Exception as e:
-        st.error(f"❌ Error loading 'delay_ml.py'")
-        st.code(f"{e}")
+        st.error(f"❌ Error loading 'delay_ml.py': {e}")
         return
 
     # Check Cache
@@ -183,7 +189,7 @@ def show_delay_model():
 
 
 # =========================================================
-# 👁️ APP 3: VISION (Ultra-Optimized for Cloud)
+# 👁️ APP 3: VISION (Optimized)
 # =========================================================
 def show_vision_app():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
@@ -194,6 +200,7 @@ def show_vision_app():
     except ImportError as e:
         st.error("❌ Library Import Error")
         st.code(f"Error details: {e}")
+        st.info("Make sure 'packages.txt' exists with 'libgl1' inside.")
         return
 
     col_vid, col_stat = st.columns([0.7, 0.3])
@@ -205,6 +212,7 @@ def show_vision_app():
         if c2.button("⏹️ Stop"): st.session_state.vision_active = False
         st_frame = st.empty()
 
+    # STATUS PLACEHOLDER (Outside loop to prevent spam)
     with col_stat:
         st.subheader("Live Phase Detection")
         status_placeholder = st.empty()
@@ -230,23 +238,20 @@ def show_vision_app():
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Loop video
                     continue
 
-                # OPTIMIZATION 1: Skip more frames (Process 1 out of 5)
+                # OPTIMIZATION: Skip frames for speed
                 frame_counter += 1
-                if frame_counter % 5 != 0:
+                if frame_counter % 3 != 0:
                     continue
 
-                # OPTIMIZATION 2: Resize frame (Huge speedup)
-                # Resize to 640px width, maintaining aspect ratio
-                height, width = frame.shape[:2]
-                new_width = 640
-                new_height = int(height * (new_width / width))
-                frame = cv2.resize(frame, (new_width, new_height))
+                # OPTIMIZATION: Resize frame to 640px width
+                h, w = frame.shape[:2]
+                new_w = 640
+                new_h = int(h * (new_w / w))
+                frame = cv2.resize(frame, (new_w, new_h))
 
-                # Run Inference
                 results = model(frame, verbose=False)
                 detected = [model.names[int(b.cls[0])] for b in results[0].boxes]
 
-                # Logic
                 if "cleaning_crew_vehicle" in detected:
                     count += 1
                     phases["CLEANING"] = True
@@ -257,30 +262,31 @@ def show_vision_app():
                     else:
                         phases["BOARDING"] = True
 
-                # Display
                 frame_rgb = cv2.cvtColor(results[0].plot(), cv2.COLOR_BGR2RGB)
                 st_frame.image(frame_rgb, use_container_width=True)
 
-                # Status Update
+                # UPDATE STATUS (Replace text, don't append)
                 status_text = ""
                 for p, active in phases.items():
                     icon = "✅" if active else "⬜"
                     color = "green" if active else "grey"
                     status_text += f":{color}[{icon} **{p}**]\n\n"
+
                 status_placeholder.markdown(status_text)
 
-                # OPTIMIZATION 3: Force Garbage Collection every 20 processed frames
-                if frame_counter % 100 == 0:
+                # Memory cleanup
+                if frame_counter % 50 == 0:
                     gc.collect()
 
             cap.release()
         except Exception as e:
             st.error(f"Runtime Error: {e}")
+            st.code(traceback.format_exc())
             st.session_state.vision_active = False
 
 
 # =========================================================
-# 🗺️ APP 4: BPMN (Image Caching Fix)
+# 🗺️ APP 4: BPMN
 # =========================================================
 def show_bpmn_app():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
