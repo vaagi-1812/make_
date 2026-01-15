@@ -7,7 +7,7 @@ import importlib
 
 # --- PAGE CONFIG ---
 st.set_page_config(
-    page_title="Swissport AI Hub",
+    page_title="GroundTruth",
     page_icon="✈️",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -30,32 +30,78 @@ def navigate_to(page_name):
     st.rerun()
 
 
+# --- GLOBAL CACHING (SPEED BOOST) ---
+# This caches the HEAVY imports so they load once for everyone
+@st.cache_resource
+def get_chatbot_agent():
+    try:
+        import Chatbot_neo4j as bot_module
+        return bot_module
+    except:
+        return None
+
+
+@st.cache_resource
+def load_yolo_model():
+    from ultralytics import YOLO
+    # UPDATED PATH
+    return YOLO('./Object_detection/best.pt')
+
+
 # =========================================================
 # 🏠 DASHBOARD
 # =========================================================
 def show_home():
-    st.title("✈️ Swissport AI Operations Hub")
+    st.title("✈️ GroundTruth Operations Hub")
     st.markdown("### Select a module to begin")
     st.divider()
+
     col1, col2 = st.columns(2)
     col3, col4 = st.columns(2)
 
+    # --- CARD 1: Flight Assistant ---
     with col1:
         with st.container(border=True):
             st.subheader("🤖 Flight Assistant")
-            if st.button("Launch Assistant 🚀", use_container_width=True): navigate_to("Flight Assistant")
+            st.markdown("""
+            **GraphRAG AI Agent** Combines Large Language Models (LLM) with a Neo4j Knowledge Graph.  
+            *Capabilities:* Smart search for flight details, route connections, and real-time scheduling.
+            """)
+            if st.button("Launch Assistant 🚀", use_container_width=True):
+                navigate_to("Flight Assistant")
+
+    # --- CARD 2: Delay Prediction ---
     with col2:
         with st.container(border=True):
             st.subheader("🛡️ Delay Risk Analysis")
-            if st.button("Launch Risk Model 📊", use_container_width=True): navigate_to("Delay Prediction")
+            st.markdown("""
+            **Predictive Analytics Engine** Uses a Random Forest Classifier to assess delay risks.  
+            *Capabilities:* Analyzes weather, incoming delays, and historical patterns to predict on-time performance.
+            """)
+            if st.button("Launch Risk Model 📊", use_container_width=True):
+                navigate_to("Delay Prediction")
+
+    # --- CARD 3: Turnaround Vision ---
     with col3:
         with st.container(border=True):
             st.subheader("👁️ Turnaround Vision")
-            if st.button("Launch Vision AI 🎥", use_container_width=True): navigate_to("Turnaround Vision")
+            st.markdown("""
+            **Computer Vision (YOLOv8)** Real-time object detection for aircraft turnarounds.  
+            *Capabilities:* Detects vehicles, bridges, and phases (Deboarding, Cleaning, Loading) automatically from video.
+            """)
+            if st.button("Launch Vision AI 🎥", use_container_width=True):
+                navigate_to("Turnaround Vision")
+
+    # --- CARD 4: Process Visualizer ---
     with col4:
         with st.container(border=True):
             st.subheader("🗺️ Process Visualizer")
-            if st.button("View Process Map 📐", use_container_width=True): navigate_to("BPMN Visualizer")
+            st.markdown("""
+            **SOP Compliance Map** Interactive rendering of Business Process Model & Notation (BPMN).  
+            *Capabilities:* Visualizes the ideal standard operating procedures for training and compliance checks.
+            """)
+            if st.button("View Process Map 📐", use_container_width=True):
+                navigate_to("BPMN Visualizer")
 
 
 # =========================================================
@@ -63,14 +109,13 @@ def show_home():
 # =========================================================
 def show_chatbot():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
-    st.title("🤖 Graph-Augmented Flight Assistant")
+    st.title("🤖 GroundTruth Assistant")
 
-    # Debug import
-    try:
-        import Chatbot_neo4j as bot_module
-    except Exception as e:
-        st.error(f"❌ Error importing Chatbot: {e}")
-        st.code(traceback.format_exc())
+    # Use cached loader
+    bot_module = get_chatbot_agent()
+
+    if not bot_module:
+        st.error("❌ Error importing Chatbot module.")
         return
 
     if "messages" not in st.session_state: st.session_state.messages = []
@@ -83,7 +128,7 @@ def show_chatbot():
         st.chat_message("user").markdown(prompt)
 
         with st.chat_message("assistant"):
-            if bot_module and hasattr(bot_module, 'agent_executor'):
+            if hasattr(bot_module, 'agent_executor'):
                 with st.spinner("Thinking..."):
                     try:
                         response = bot_module.agent_executor.invoke({"input": prompt})
@@ -100,12 +145,11 @@ def show_delay_model():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
     st.title("🛡️ Delay Risk Analysis")
 
-    # DEBUG: Check if file exists and dependencies are met
     try:
         import delay_ml
     except Exception as e:
-        st.error(f"❌ critical Error: Could not load 'delay_ml.py'.")
-        st.warning("This usually means a library is missing (like pandas/sklearn) or the file isn't found.")
+        st.error(f"❌ Critical Error: Could not load 'delay_ml.py'.")
+        st.warning("Ensure 'seaborn', 'pandas', and 'scikit-learn' are in requirements.txt.")
         st.code(f"Detailed Error: {e}\n\n{traceback.format_exc()}")
         return
 
@@ -132,7 +176,6 @@ def show_delay_model():
         old_stdout = sys.stdout
         sys.stdout = StreamlitLogger()
 
-        # Patch Plotting
         old_show = plt.show
 
         def new_show():
@@ -167,19 +210,14 @@ def show_delay_model():
 # =========================================================
 def show_vision_app():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
-    st.title("Computer Vision Turnaround Analysis")
+    st.title("GroundTruth Vision Analysis")
 
-    # DEBUG: Show EXACT error if libraries fail
     try:
         import cv2
-        from ultralytics import YOLO
+        # We don't import YOLO here anymore to use the global cache function below
     except ImportError as e:
         st.error("❌ Library Import Error")
-        st.warning("This means opencv-python-headless or ultralytics is not installed correctly.")
         st.code(f"Error details: {e}")
-        return
-    except Exception as e:
-        st.error(f"❌ Unexpected Error: {e}")
         return
 
     col_vid, col_stat = st.columns([0.7, 0.3])
@@ -193,14 +231,21 @@ def show_vision_app():
 
     if st.session_state.vision_active:
         try:
-            # TRY/CATCH for model loading specifically
-            model = YOLO('./Object_detection/best.pt')
-            cap = cv2.VideoCapture('./Object_detection/turnaround clip.mp4')
+            # Use cached model (Faster!)
+            model = load_yolo_model()
+
+            # UPDATED PATH
+            video_path = './Object_detection/turnaround clip.mp4'
+            cap = cv2.VideoCapture(video_path)
+
+            if not cap.isOpened():
+                st.error(f"Could not open video at: {video_path}")
+                st.session_state.vision_active = False
 
             phases = {"DEBOARDING": False, "CLEANING": False, "BOARDING": False, "LUGGAGE": False}
             count = 0
 
-            while st.session_state.vision_active:
+            while st.session_state.vision_active and cap.isOpened():
                 success, frame = cap.read()
                 if not success:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -241,7 +286,7 @@ def show_vision_app():
 # =========================================================
 def show_bpmn_app():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
-    st.title("🗺️ SOP Process Visualization")
+    st.title("🗺️ GroundTruth Process Map")
 
     # 1. Check if we have a cached image
     if st.session_state.bpmn_image is not None:
