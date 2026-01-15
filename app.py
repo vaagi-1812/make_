@@ -31,20 +31,16 @@ def navigate_to(page_name):
 
 
 # --- GLOBAL CACHING (SPEED BOOST) ---
-# This caches the HEAVY imports so they load once for everyone
 @st.cache_resource
 def get_chatbot_agent():
-    try:
-        import Chatbot_neo4j as bot_module
-        return bot_module
-    except:
-        return None
+    # REMOVED TRY/EXCEPT so we can see the real error in the UI if it fails
+    import Chatbot_neo4j as bot_module
+    return bot_module
 
 
 @st.cache_resource
 def load_yolo_model():
     from ultralytics import YOLO
-    # UPDATED PATH
     return YOLO('./Object_detection/best.pt')
 
 
@@ -59,49 +55,29 @@ def show_home():
     col1, col2 = st.columns(2)
     col3, col4 = st.columns(2)
 
-    # --- CARD 1: Flight Assistant ---
     with col1:
         with st.container(border=True):
             st.subheader("🤖 Flight Assistant")
-            st.markdown("""
-            **GraphRAG AI Agent** Combines Large Language Models (LLM) with a Neo4j Knowledge Graph.  
-            *Capabilities:* Smart search for flight details and route connections.
-            """)
-            if st.button("Launch Assistant 🚀", use_container_width=True):
-                navigate_to("Flight Assistant")
+            st.markdown("**GraphRAG AI Agent** with Neo4j & LLaMa 3.")
+            if st.button("Launch Assistant 🚀", use_container_width=True): navigate_to("Flight Assistant")
 
-    # --- CARD 2: Delay Prediction ---
     with col2:
         with st.container(border=True):
             st.subheader("🛡️ Delay Risk Analysis")
-            st.markdown("""
-            **Predictive Analytics Engine** Uses a Random Forest Classifier to assess delay risks.  
-            *Capabilities:* Analyzes weather, incoming delays, and historical patterns to predict on-time performance.
-            """)
-            if st.button("Launch Risk Model 📊", use_container_width=True):
-                navigate_to("Delay Prediction")
+            st.markdown("**Predictive Analytics** with Random Forest.")
+            if st.button("Launch Risk Model 📊", use_container_width=True): navigate_to("Delay Prediction")
 
-    # --- CARD 3: Turnaround Vision ---
     with col3:
         with st.container(border=True):
             st.subheader("👁️ Turnaround Vision")
-            st.markdown("""
-            **Computer Vision (YOLOv8)** Real-time object detection for aircraft turnarounds.  
-            *Capabilities:* Detects vehicles, bridges, and phases (Deboarding, Cleaning, Loading) automatically from video.
-            """)
-            if st.button("Launch Vision AI 🎥", use_container_width=True):
-                navigate_to("Turnaround Vision")
+            st.markdown("**Computer Vision** (YOLOv8) for real-time tracking.")
+            if st.button("Launch Vision AI 🎥", use_container_width=True): navigate_to("Turnaround Vision")
 
-    # --- CARD 4: Process Visualizer ---
     with col4:
         with st.container(border=True):
             st.subheader("🗺️ Process Visualizer")
-            st.markdown("""
-            **SOP Compliance Map** Interactive rendering of Business Process Model & Notation (BPMN).  
-            *Capabilities:* Visualizes the ideal standard operating procedures for training and compliance checks.
-            """)
-            if st.button("View Process Map 📐", use_container_width=True):
-                navigate_to("BPMN Visualizer")
+            st.markdown("**BPMN Visualization** for SOP compliance.")
+            if st.button("View Process Map 📐", use_container_width=True): navigate_to("BPMN Visualizer")
 
 
 # =========================================================
@@ -111,11 +87,12 @@ def show_chatbot():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
     st.title("🤖 GroundTruth Assistant")
 
-    # Use cached loader
-    bot_module = get_chatbot_agent()
-
-    if not bot_module:
-        st.error("❌ Error importing Chatbot module.")
+    try:
+        bot_module = get_chatbot_agent()
+    except Exception as e:
+        st.error("❌ Critical Error Importing Chatbot")
+        st.error(f"Error details: {e}")
+        st.warning("Check your requirements.txt and Streamlit Secrets.")
         return
 
     if "messages" not in st.session_state: st.session_state.messages = []
@@ -148,9 +125,8 @@ def show_delay_model():
     try:
         import delay_ml
     except Exception as e:
-        st.error(f"❌ Critical Error: Could not load 'delay_ml.py'.")
-        st.warning("Ensure 'seaborn', 'pandas', and 'scikit-learn' are in requirements.txt.")
-        st.code(f"Detailed Error: {e}\n\n{traceback.format_exc()}")
+        st.error(f"❌ Error loading 'delay_ml.py'")
+        st.code(f"{e}")
         return
 
     # Check Cache
@@ -206,7 +182,7 @@ def show_delay_model():
 
 
 # =========================================================
-# 👁️ APP 3: VISION (Looping)
+# 👁️ APP 3: VISION (Optimization Fix)
 # =========================================================
 def show_vision_app():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
@@ -214,7 +190,6 @@ def show_vision_app():
 
     try:
         import cv2
-        # We don't import YOLO here anymore to use the global cache function below
     except ImportError as e:
         st.error("❌ Library Import Error")
         st.code(f"Error details: {e}")
@@ -229,26 +204,36 @@ def show_vision_app():
         if c2.button("⏹️ Stop"): st.session_state.vision_active = False
         st_frame = st.empty()
 
+    # Place the status placeholder OUTSIDE the loop so it doesn't duplicate
+    with col_stat:
+        st.subheader("Live Phase Detection")
+        status_placeholder = st.empty()
+
     if st.session_state.vision_active:
         try:
-            # Use cached model (Faster!)
             model = load_yolo_model()
-
-            # UPDATED PATH
             video_path = './Object_detection/turnaround clip.mp4'
             cap = cv2.VideoCapture(video_path)
 
             if not cap.isOpened():
-                st.error(f"Could not open video at: {video_path}")
+                st.error(f"❌ Could not find video at: {video_path}")
+                st.info("Make sure you uploaded 'Object_detection/turnaround clip.mp4' to GitHub.")
                 st.session_state.vision_active = False
+                return
 
             phases = {"DEBOARDING": False, "CLEANING": False, "BOARDING": False, "LUGGAGE": False}
             count = 0
+            frame_counter = 0
 
             while st.session_state.vision_active and cap.isOpened():
                 success, frame = cap.read()
                 if not success:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Loop video
+                    continue
+
+                # PERFORMANCE FIX: Only process every 3rd frame
+                frame_counter += 1
+                if frame_counter % 3 != 0:
                     continue
 
                 results = model(frame, verbose=False)
@@ -264,16 +249,19 @@ def show_vision_app():
                     else:
                         phases["BOARDING"] = True
 
+                # Display Video
                 frame_rgb = cv2.cvtColor(results[0].plot(), cv2.COLOR_BGR2RGB)
                 st_frame.image(frame_rgb, use_container_width=True)
 
-                # Update status
-                with col_stat:
-                    status_text = ""
-                    for p, active in phases.items():
-                        icon = "✅" if active else "⬜"
-                        status_text += f"{icon} **{p}**\n\n"
-                    st.markdown(status_text)
+                # Update status (REPLACE text, don't append)
+                status_text = ""
+                for p, active in phases.items():
+                    icon = "✅" if active else "⬜"
+                    color = "green" if active else "grey"
+                    status_text += f":{color}[{icon} **{p}**]\n\n"
+
+                status_placeholder.markdown(status_text)
+
             cap.release()
         except Exception as e:
             st.error(f"Runtime Error: {e}")
@@ -288,7 +276,6 @@ def show_bpmn_app():
     st.button("← Back to Dashboard", on_click=navigate_to, args=("Home",))
     st.title("🗺️ GroundTruth Process Map")
 
-    # 1. Check if we have a cached image
     if st.session_state.bpmn_image is not None:
         st.success("Loaded from Cache")
         st.image(st.session_state.bpmn_image)
@@ -297,16 +284,14 @@ def show_bpmn_app():
             st.rerun()
         return
 
-    # 2. Generate if not cached
     if st.button("📐 Generate Diagram"):
         original_show = plt.show
         try:
-            # Patch plt.show to save as IMAGE buffer instead of Figure object
             def save_as_image():
                 buf = io.BytesIO()
                 plt.savefig(buf, format="png", bbox_inches='tight')
                 buf.seek(0)
-                st.session_state.bpmn_image = buf  # Save the image bytes
+                st.session_state.bpmn_image = buf
                 st.image(buf)
                 plt.clf()
 
